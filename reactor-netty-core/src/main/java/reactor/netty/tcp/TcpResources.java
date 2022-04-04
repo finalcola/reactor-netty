@@ -346,9 +346,12 @@ public class TcpResources implements ConnectionProvider, LoopResources {
 			String name) {
 		T update;
 		for (;;) {
+			// 保存了实例则新增，否则直接返回
 			T resources = ref.get();
 			if (resources == null || loops != null || provider != null) {
+				// 创建网络资源，对于HttpClient会新建一个HttpResource，提供创建底层netty channel和eventLoop的能力
 				update = create(resources, loops, provider, name, onNew);
+				// 处理之前创建的资源
 				if (ref.compareAndSet(resources, update)) {
 					if (resources != null) {
 						if (loops != null) {
@@ -394,13 +397,16 @@ public class TcpResources implements ConnectionProvider, LoopResources {
 			String name,
 			BiFunction<LoopResources, ConnectionProvider, T> onNew) {
 		if (previous == null) {
+			// 负责EventLoop资源创建
 			loops = loops == null ? LoopResources.create("reactor-" + name) : loops;
+			// 负责连接池的创建
 			provider = provider == null ? ConnectionProvider.create(name, 500) : provider;
 		}
 		else {
 			loops = loops == null ? previous.defaultLoops : loops;
 			provider = provider == null ? previous.defaultProvider : provider;
 		}
+		// 创建资源，由调用方决定创建的资源类型，例如HttpClient会创建HttpResources
 		return onNew.apply(loops, provider);
 	}
 

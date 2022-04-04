@@ -107,19 +107,23 @@ class HttpClientConnect extends HttpClient {
 	protected Mono<? extends Connection> connect() {
 		HttpClientConfig config = configuration();
 
+		// 将延迟生效的属性应用到config上
 		Mono<? extends Connection> mono;
 		if (config.deferredConf != null) {
 			return config.deferredConf.apply(Mono.just(config))
 			           .flatMap(MonoHttpConnect::new);
 		}
 		else {
+			// 创建获取http连接的Mono，内部是调用ConnectionProvider
 			mono = new MonoHttpConnect(config);
 		}
 
+		// 注册doOnConnect的回调，在subscribe时调用
 		if (config.doOnConnect() != null) {
 			mono = mono.doOnSubscribe(s -> config.doOnConnect().accept(config));
 		}
 
+		// 注册请求出现异常的回调
 		if (config.doOnRequestError != null) {
 			mono = mono.onErrorResume(error ->
 					Mono.deferContextual(Mono::just)
@@ -127,6 +131,7 @@ class HttpClientConnect extends HttpClient {
 					    .then(Mono.error(error)));
 		}
 
+		// 调用用户自己配置的mapConnect方法，对connection进行装饰
 		if (config.connector != null) {
 			mono = config.connector.apply(mono);
 		}
@@ -204,12 +209,14 @@ class HttpClientConnect extends HttpClient {
 		@Override
 		@SuppressWarnings("deprecation")
 		public void subscribe(CoreSubscriber<? super Connection> actual) {
+			// 回调
 			HttpClientHandler handler = new HttpClientHandler(config);
 
 			Mono.<Connection>create(sink -> {
 				HttpClientConfig _config = config;
 
 				//append secure handler if needed
+				// ssl相关
 				if (handler.toURI.isSecure()) {
 					if (_config.sslProvider == null) {
 						_config = new HttpClientConfig(config);
@@ -255,16 +262,22 @@ class HttpClientConnect extends HttpClient {
 					}
 				}
 
+				// 用于接收回调的connection
 				ConnectionObserver observer =
+						// 监听异常
 						new HttpObserver(sink, handler)
+								// 负责通知注册的onRequest、onResponse回调
 						        .then(_config.defaultConnectionObserver())
 						        .then(_config.connectionObserver())
+								// 将创建好的连接初始化好，传递给sink，并监听连接状态，在连接创建完成后发送请求
 						        .then(new HttpIOHandlerObserver(sink, handler));
 
 				AddressResolverGroup<?> resolver = _config.resolverInternal();
 
+				// 从连接池中获取连接，当连接创建好后，会通知observer；observer再将连接对象传递给sink，然后通知到下游
 				_config.connectionProvider()
 						.acquire(_config, observer, handler, resolver)
+						// ClientTransportSubscriber
 						.subscribe(new ClientTransportSubscriber(sink));
 
 			}).retryWhen(Retry.indefinitely().filter(handler))
@@ -296,6 +309,7 @@ class HttpClientConnect extends HttpClient {
 
 			@Override
 			public void onNext(Connection connection) {
+				// sink.success方法是在observer中调用的，并且连接池不会调用onNext方法，所以被调用onNext时是异常情况
 				sink.onCancel(connection);
 			}
 
@@ -420,6 +434,7 @@ class HttpClientConnect extends HttpClient {
 					log.debug(format(connection.channel(), "Handler is being applied: {}"), handler);
 				}
 
+				// 在连接创建完成后，调用发送请求的回调
 				Mono.defer(() -> Mono.fromDirect(handler.requestWithBody((HttpClientOperations) connection)))
 				    .subscribe(connection.disposeSubscriber());
 			}
@@ -454,6 +469,7 @@ class HttpClientConnect extends HttpClient {
 		volatile HttpHeaders        previousRequestHeaders;
 
 		HttpClientHandler(HttpClientConfig configuration) {
+			// 从config对象中回去属性和回调
 			this.method = configuration.method;
 			this.compress = configuration.acceptGzip;
 			this.followRedirectPredicate = configuration.followRedirectPredicate;
@@ -471,6 +487,7 @@ class HttpClientConnect extends HttpClient {
 
 			this.websocketClientSpec = configuration.websocketClientSpec;
 			this.shouldRetry = !configuration.retryDisabled;
+			// 发送请求的回调
 			this.handler = configuration.body;
 
 			if (configuration.uri == null) {
@@ -503,12 +520,14 @@ class HttpClientConnect extends HttpClient {
 			return address;
 		}
 
+		// 构造并发送请求
 		Publisher<Void> requestWithBody(HttpClientOperations ch) {
 			try {
 				ch.resourceUrl = this.resourceUrl;
 				ch.responseTimeout = responseTimeout;
 
 				UriEndpoint uri = toURI;
+				// 构造请求头
 				HttpHeaders headers = ch.getNettyRequest()
 				                        .setUri(uri.getPathAndQuery())
 				                        .setMethod(method)
@@ -543,6 +562,7 @@ class HttpClientConnect extends HttpClient {
 					ch.chunkedTransfer(true);
 				}
 
+				// 请求已经准备好发送，通知listener
 				ch.listener().onStateChange(ch, HttpClientState.REQUEST_PREPARED);
 				if (websocketClientSpec != null) {
 					Mono<Void> result =
@@ -580,6 +600,7 @@ class HttpClientConnect extends HttpClient {
 				}
 
 				ch.redirectRequestConsumer(consumer);
+				// handler是在HttpClient的send方法中注册的回调，所以这一步会发送执行请求
 				return handler != null ? handler.apply(ch, ch) : ch.send();
 			}
 			catch (Throwable t) {

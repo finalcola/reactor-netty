@@ -580,6 +580,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 
 	@Override
 	protected void onInboundNext(ChannelHandlerContext ctx, Object msg) {
+		// 读取的是正常的响应内容
 		if (msg instanceof HttpResponse) {
 			HttpResponse response = (HttpResponse) msg;
 			if (response.decoderResult()
@@ -603,6 +604,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 				ReferenceCountUtil.release(msg);
 				return;
 			}
+			// 设置标记
 			is100Continue = false;
 			started = true;
 			setNettyResponse(response);
@@ -623,6 +625,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 						                 .toString());
 			}
 
+			// 通知listener
 			if (notRedirected(response)) {
 				try {
 					listener().onStateChange(this, HttpClientState.RESPONSE_RECEIVED);
@@ -639,6 +642,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 			}
 
 			if (msg instanceof FullHttpResponse) {
+				// 接收的是完整的响应报文，那么直接onNext、onComplete就行
 				FullHttpResponse request = (FullHttpResponse) msg;
 				if (request.content().readableBytes() > 0) {
 					super.onInboundNext(ctx, msg);
@@ -651,13 +655,16 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 			return;
 		}
 
+		// 最后一个包，调用onComplete
 		if (msg instanceof LastHttpContent) {
 			if (is100Continue) {
+				// 响应码为100，继续读
 				ReferenceCountUtil.release(msg);
 				channel().read();
 				return;
 			}
 			if (!started) {
+				// 异常情况
 				if (log.isDebugEnabled()) {
 					log.debug(format(channel(), "HttpClientOperations received an incorrect end " +
 							"delimiter (previously used connection?)"));
@@ -668,6 +675,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 			if (log.isDebugEnabled()) {
 				log.debug(format(channel(), "Received last HTTP packet"));
 			}
+			// 最后一个包应该是空的，如果不是的话，交给父类处理
 			if (msg != LastHttpContent.EMPTY_LAST_CONTENT) {
 				if (redirecting != null) {
 					ReferenceCountUtil.release(msg);
@@ -681,6 +689,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 			if (markSentBody()) {
 				markPersistent(false);
 			}
+			// 通知下游已经读取完成
 			terminate();
 			return;
 		}

@@ -92,6 +92,7 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 			long pendingAcquireTimeout,
 			InstrumentedPool<PooledConnection> pool,
 			MonoSink<Connection> sink) {
+		// 接收连接的回调，通知sink和connectionObserver
 		return new DisposableAcquire(connectionObserver, config.channelOperationsProvider(),
 				pendingAcquireTimeout, pool, sink);
 	}
@@ -181,6 +182,7 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 
 			Channel c = pooledConnection.channel;
 
+			// 将获取到的连接传递给下游
 			if (c.eventLoop().inEventLoop()) {
 				run();
 			}
@@ -225,6 +227,7 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 			Channel c = pooledConnection.channel;
 
 			// The connection might be closed after checking the eviction predicate
+			// 假如channel已经关闭了，那么就从连接池中重新再拿一个(仅重试一次)，否则抛出异常
 			if (!c.isActive()) {
 				pooledRef.invalidate()
 				         .subscribe(null, null, () -> {
@@ -246,13 +249,16 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 			}
 
 			// Set the owner only if the channel is active
+			// 将channel的owner设置为当前对象
 			ConnectionObserver current = c.attr(OWNER)
 			                              .getAndSet(this);
 
 			if (current instanceof PendingConnectionObserver) {
+				// 如果当前的对象是PendingConnectionObserver，那么就将存在queue中的连接时间取出来重放
 				PendingConnectionObserver pending = (PendingConnectionObserver) current;
 				PendingConnectionObserver.Pending p;
 				current = null;
+				// 注册一个归还连接的listener
 				registerClose(pooledRef, pool);
 
 				while ((p = pending.pendingQueue.poll()) != null) {
@@ -265,6 +271,7 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 				}
 			}
 			else if (current == null) {
+				// 注册一个归还连接的listener
 				registerClose(pooledRef, pool);
 			}
 
@@ -297,6 +304,7 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 				}
 				else {
 					// Already configured, just forward the connection
+					// 通知下游观察者连接已经创建完成
 					sink.success(pooledConnection);
 				}
 				return;
@@ -506,17 +514,22 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 			this.config = config;
 			this.remoteAddress = remoteAddress;
 			this.resolver = resolver;
+			// 创建连接池，connectChannel方法会创建一个包含初始化完成的连接的Mono
 			this.pool = provider.newPool(connectChannel(), null, DEFAULT_DESTROY_HANDLER, DEFAULT_EVICTION_PREDICATE);
 		}
 
 		Publisher<PooledConnection> connectChannel() {
 			return Mono.create(sink -> {
+				// 用于处理netty新创建的连接，并且通知sink
 				PooledConnectionInitializer initializer = new PooledConnectionInitializer(sink);
+				// 创建netty链接，并在创建好后通知initializer
+				// TransportConnector -> initializer -> sink
 				TransportConnector.connect(config, remoteAddress, resolver, initializer)
 				                  .subscribe(initializer);
 			});
 		}
 
+		// 感知netty连接的创建，以及添加reactor自己的handler
 		final class PooledConnectionInitializer extends ChannelInitializer<Channel> implements CoreSubscriber<Channel> {
 			final MonoSink<PooledConnection> sink;
 
@@ -532,15 +545,18 @@ final class DefaultPooledConnectionProvider extends PooledConnectionProvider<Def
 					logPoolState(ch, pool, "Created a new pooled channel");
 				}
 
+				// 将netty的channel封装，和对应连接池绑定起来;并且会给下游观察者返回这个pooledConnection对象而不是原始的netty channel
 				PooledConnection pooledConnection = new PooledConnection(ch, pool);
 
 				this.pooledConnection = pooledConnection;
 
 				ch.attr(OWNER).compareAndSet(null, new PendingConnectionObserver(sink.currentContext()));
 				ch.pipeline().remove(this);
+				// 添加channelInitializer，感知连接的创建并将连接封装为ChannelOperations的子类
 				ch.pipeline()
 				  .addFirst(config.channelInitializer(pooledConnection, remoteAddress, false));
 
+				// 将当前pooledConnection对象设置到channel的attr中
 				pooledConnection.bind();
 			}
 

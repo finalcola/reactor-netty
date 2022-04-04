@@ -387,8 +387,10 @@ public abstract class TransportConfig {
 				pipeline.addFirst(NettyPipeline.LoggingHandler, config.loggingHandler);
 			}
 
+			// 添加handler
 			ChannelOperations.addReactiveBridge(channel, config.channelOperationsProvider(), connectionObserver);
 
+			// channel初始化的回调函数
 			config.defaultOnChannelInit()
 			      .then(config.doOnChannelInit)
 			      .onChannelInit(connectionObserver, channel, remoteAddress);

@@ -98,14 +98,18 @@ public abstract class PooledConnectionProvider<T extends Connection> implements 
 		Objects.requireNonNull(remote, "remoteAddress");
 		Objects.requireNonNull(resolverGroup, "resolverGroup");
 		return Mono.create(sink -> {
+			// 远程server地址
 			SocketAddress remoteAddress = Objects.requireNonNull(remote.get(), "Remote Address supplier returned null");
+			// 根据地址进行hash，确定保存的池子
 			PoolKey holder = new PoolKey(remoteAddress, config.channelHash());
 			PoolFactory<T> poolFactory = poolFactory(remoteAddress);
+			// 从连接池中取或者新建
 			InstrumentedPool<T> pool = channelPools.computeIfAbsent(holder, poolKey -> {
 				if (log.isDebugEnabled()) {
 					log.debug("Creating a new [{}] client pool [{}] for [{}]", name, poolFactory, remoteAddress);
 				}
 
+				// 新建连接池(内部负责创建连接池)
 				InstrumentedPool<T> newPool = createPool(config, poolFactory, remoteAddress, resolverGroup);
 
 				if (poolFactory.metricsEnabled || config.metricsRecorder() != null) {

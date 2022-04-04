@@ -91,7 +91,7 @@ public final class TransportConnector {
 
 	/**
 	 * Connect a {@link Channel} to the remote peer.
-	 *
+	 * 创建和远程server的连接
 	 * @param config the transport configuration
 	 * @param remoteAddress the {@link SocketAddress} to connect to
 	 * @param resolverGroup the resolver which will resolve the address of the unresolved named address
@@ -106,8 +106,11 @@ public final class TransportConnector {
 		Objects.requireNonNull(channelInitializer, "channelInitializer");
 
 		boolean isDomainAddress = remoteAddress instanceof DomainSocketAddress;
+		// 初始化本地channel
 		return doInitAndRegister(config, channelInitializer, isDomainAddress)
+				// 连接远程server
 				.flatMap(channel -> doResolveAndConnect(channel, config, remoteAddress, resolverGroup)
+						// 重试
 						.onErrorResume(RetryConnectException.class,
 								t -> {
 									AtomicInteger index = new AtomicInteger(1);
@@ -177,6 +180,7 @@ public final class TransportConnector {
 			}
 
 			ChannelFuture f;
+			// 创建本地到远程的连接
 			if (bindAddress == null) {
 				f = channel.connect(remoteAddress);
 			}
@@ -185,6 +189,7 @@ public final class TransportConnector {
 				f = channel.connect(remoteAddress, local);
 			}
 
+			// 连接创建成功或者失败后通知下游
 			f.addListener(future -> {
 				if (future.isSuccess()) {
 					connectPromise.setSuccess();
@@ -221,10 +226,12 @@ public final class TransportConnector {
 
 		Channel channel = null;
 		try {
+			// 创建netty channel
 			channel = channelFactory.newChannel();
 			if (channelInitializer instanceof ServerTransport.AcceptorInitializer) {
 				((ServerTransport.AcceptorInitializer) channelInitializer).acceptor.enableAutoReadTask(channel);
 			}
+			// 将channelInitializer添加到pipeline
 			channel.pipeline().addLast(channelInitializer);
 			setChannelOptions(channel, config.options, isDomainSocket);
 			setAttributes(channel, config.attrs);
@@ -236,6 +243,7 @@ public final class TransportConnector {
 			return Mono.error(t);
 		}
 
+		// MonoChannelPromise作为Promise类的适配类，在channel创建完成后通知下游回调
 		MonoChannelPromise monoChannelPromise = new MonoChannelPromise(channel);
 		channel.unsafe().register(elg.next(), monoChannelPromise);
 		Throwable cause = monoChannelPromise.cause();
@@ -334,6 +342,7 @@ public final class TransportConnector {
 		}
 	}
 
+	// 实现了Mono和ChannelPromise，内部会在promise完成或者异常的时候，通知下游的Subscriber，其余Promise的方法都不支持
 	static final class MonoChannelPromise extends Mono<Channel> implements ChannelPromise, Subscription {
 
 		final Channel channel;
@@ -574,6 +583,7 @@ public final class TransportConnector {
 			this.actual = actual;
 			actual.onSubscribe(this);
 
+			// 如果当前promise已经完成，则直接通知回调
 			if (isDone()) {
 				if (isSuccess()) {
 					actual.onNext(channel);

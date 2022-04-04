@@ -56,6 +56,7 @@ public final class EchoServer {
 			server = server.protocol(HttpProtocol.H2);
 		}
 
+		System.out.println("server started.port:" + PORT);
 		server.bindNow()
 		      .onDispose()
 		      .block();

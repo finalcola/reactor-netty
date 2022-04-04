@@ -76,6 +76,12 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 		requireNonNull(ch, "channel");
 		requireNonNull(opsFactory, "opsFactory");
 		requireNonNull(listener, "listener");
+		/*
+		添加handler到netty的pipeline：
+		1、让reactor感知到连接创建完成，并且将连接封装为ChannelOperations的子类
+		2、接收数据，并传递给注册在ChannelOperations上的subscriber
+		3、将连接状态变化通知给listener
+		 */
 		ch.pipeline()
 		  .addLast(NettyPipeline.ReactiveBridge, new ChannelOperationsHandler(opsFactory, listener));
 	}
@@ -272,6 +278,7 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 
 	@Override
 	public ByteBufFlux receive() {
+		// 接收响应
 		return ByteBufFlux.fromInbound(receiveObject(), connection.channel()
 		                                                          .alloc());
 	}
@@ -401,6 +408,7 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 	 * @param msg the read payload
 	 */
 	protected void onInboundNext(ChannelHandlerContext ctx, Object msg) {
+		// 将数据传递给subscriber
 		inbound.onInboundNext(msg);
 	}
 
@@ -416,6 +424,7 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 	 * React on inbound completion (last packet)
 	 */
 	protected void onInboundComplete() {
+		// 响应读取完成，通知subscriber
 		inbound.onInboundComplete();
 	}
 
@@ -436,6 +445,7 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 
 	/**
 	 * React on inbound/outbound completion (last packet)
+	 * 读取完成
 	 */
 	protected void onOutboundComplete() {
 		if (log.isDebugEnabled()) {
@@ -458,6 +468,7 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 
 	/**
 	 * Final release/close (last packet)
+	 * 数据读取完成，通知观察者和注册的回调方法
 	 */
 	protected final void terminate() {
 		if (rebind(connection)) {
@@ -470,11 +481,13 @@ public class ChannelOperations<INBOUND extends NettyInbound, OUTBOUND extends Ne
 			// Do not call directly inbound.onInboundComplete()
 			// HttpClientOperations need to notify with error
 			// when there is no response state
+			// 响应完成，通知subscriber
 			onInboundComplete();
-			afterInboundComplete();
+			afterInboundComplete(); // hook
 			// EmitResult is ignored as it is guaranteed that this call happens in an event loop
 			// and it is guarded by rebind(connection), so tryEmitEmpty() should happen just once
 			onTerminate.tryEmitEmpty();
+			// 通知回调
 			listener.onStateChange(this, ConnectionObserver.State.DISCONNECTING);
 		}
 	}

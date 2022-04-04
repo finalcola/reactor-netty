@@ -66,6 +66,7 @@ final class DefaultLoopResources extends AtomicLong implements LoopResources {
 		this.cacheNativeServerLoops = new AtomicReference<>();
 
 		if (selectCount == -1) {
+			// 默认selector数量和工作线程数量一样，且使用同一个eventLoop
 			this.selectCount = workerCount;
 			this.serverSelectLoops = this.serverLoops;
 			this.cacheNativeSelectLoops = this.cacheNativeServerLoops;

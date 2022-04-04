@@ -1304,6 +1304,7 @@ public abstract class HttpClient extends ClientTransport<HttpClient, HttpClientC
 	 */
 	public RequestSender request(HttpMethod method) {
 		Objects.requireNonNull(method, "method");
+		// 将config复制一份，并新建一个HttpClientFinalizer对象
 		HttpClientFinalizer dup = new HttpClientFinalizer(new HttpClientConfig(configuration()));
 		dup.configuration().method = method;
 		return dup;

@@ -109,6 +109,7 @@ final class HttpClientFinalizer extends HttpClientConnect implements HttpClient.
 			alloc = ByteBufAllocator.DEFAULT;
 		}
 
+		// 创建获取http连接的Mono，内部是调用ConnectionProvider
 		@SuppressWarnings("unchecked")
 		Mono<ChannelOperations<?, ?>> connector = (Mono<ChannelOperations<?, ?>>) connect();
 		return ByteBufFlux.fromInbound(connector.flatMapMany(contentReceiver), alloc);
@@ -127,6 +128,7 @@ final class HttpClientFinalizer extends HttpClientConnect implements HttpClient.
 			BiFunction<? super HttpClientRequest, ? super NettyOutbound, ? extends Publisher<Void>> sender) {
 		Objects.requireNonNull(sender, "requestBody");
 		HttpClient dup = duplicate();
+		// 设置写入body的回调
 		dup.configuration().body = sender;
 		return (HttpClientFinalizer) dup;
 	}
@@ -134,6 +136,7 @@ final class HttpClientFinalizer extends HttpClientConnect implements HttpClient.
 	@Override
 	public HttpClientFinalizer send(Publisher<? extends ByteBuf> requestBody) {
 		Objects.requireNonNull(requestBody, "requestBody");
+		// 写入body的回调
 		return send((req, out) -> out.send(requestBody));
 	}
 

@@ -581,6 +581,7 @@ public final class HttpClientConfig extends ClientTransportConfig<HttpClientConf
 			HttpResponseDecoderSpec decoder,
 			@Nullable ChannelMetricsRecorder metricsRecorder,
 			@Nullable Function<String, String> uriTagValue) {
+		// 添加http协议解码handler
 		p.addBefore(NettyPipeline.ReactiveBridge,
 				NettyPipeline.HttpCodec,
 				new HttpClientCodec(
@@ -812,6 +813,7 @@ public final class HttpClientConfig extends ClientTransportConfig<HttpClientConf
 			this.decoder = config.decoder;
 			this.http2Settings = config.http2Settings();
 			this.metricsRecorder = config.metricsRecorderInternal();
+			// 将连接封装为HttpOperations的子类
 			this.opsFactory = config.channelOperationsProvider();
 			this.protocols = config._protocols;
 			this.sslProvider = config.sslProvider;

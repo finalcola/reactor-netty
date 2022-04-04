@@ -126,6 +126,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 		if (Operators.validate(n)) {
 			if (eventLoop.inEventLoop()) {
 				this.receiverDemand = Operators.addCap(receiverDemand, n);
+				// 尝试发送缓存的数据，如果有的话
 				drainReceiver();
 			}
 			else {
@@ -139,6 +140,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 
 	@Override
 	public void subscribe(CoreSubscriber<? super Object> s) {
+		// 保存subscriber的引用，并正常调用onSubscribe方法。内部会校验下状态
 		if (eventLoop.inEventLoop()) {
 			startReceiver(s);
 		}
@@ -149,9 +151,11 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 
 	final void startReceiver(CoreSubscriber<? super Object> s) {
 		if (once == 0 && ONCE.compareAndSet(this, 0, 1)) {
+			// CAS保证并发环境下的正确性
 			if (log.isDebugEnabled()) {
 				log.debug(format(channel, "{}: subscribing inbound receiver"), this);
 			}
+			// 已经接收响应完成，调用error
 			if (inboundDone && getPending() == 0) {
 				if (inboundError != null) {
 					Operators.error(s, inboundError);
@@ -162,6 +166,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 				return;
 			}
 
+			// 保存subscriber的引用，并正常调用onSubscribe方法
 			receiver = s;
 
 			s.onSubscribe(this);
@@ -210,6 +215,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 		}
 	}
 
+	// 这个方法主要是将queue缓存的数据传递给下游
 	final void drainReceiver() {
 		// general protect against stackoverflow onNext -> request -> onNext
 		if (wip++ != 0) {
@@ -340,8 +346,10 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 		}
 	}
 
+	// 当netty接受到响应返回时，会调用该方法。
 	final void onInboundNext(Object msg) {
 		if (inboundDone || isCancelled()) {
+			// 已经接收完了，忽略接收的数据
 			if (log.isDebugEnabled()) {
 				log.debug(format(channel, "{}: dropping frame {}"), this, msg);
 			}
@@ -350,6 +358,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 		}
 
 		if (receiverFastpath && receiver != null) {
+			// receiverFastpath在观察者request Integer.MAX 时为true
 			try {
 				if (logLeakDetection.isDebugEnabled()) {
 					if (msg instanceof ByteBuf) {
@@ -361,6 +370,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 								" will handle the message from this point"));
 					}
 				}
+				// 直接通知下游回调
 				receiver.onNext(msg);
 			}
 			finally {
@@ -368,6 +378,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 			}
 		}
 		else {
+			// 将数据缓存到队列中，然后queue中的数据传给下游
 			Queue<Object> q = receiverQueue;
 			if (q == null) {
 				// please note, in that case we are using non-thread safe, simple
@@ -393,6 +404,7 @@ final class FluxReceive extends Flux<Object> implements Subscription, Disposable
 		if (inboundDone) {
 			return;
 		}
+		// 响应读取完成，通知subscriber
 		inboundDone = true;
 		if (receiverFastpath) {
 			CoreSubscriber<?> receiver = this.receiver;

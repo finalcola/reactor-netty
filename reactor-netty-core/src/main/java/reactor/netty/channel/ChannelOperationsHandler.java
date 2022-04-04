@@ -56,6 +56,7 @@ final class ChannelOperationsHandler extends ChannelInboundHandlerAdapter {
 		if (ctx.channel().isActive()) {
 			Connection c = Connection.from(ctx.channel());
 			listener.onStateChange(c, ConnectionObserver.State.CONNECTED);
+			// 这一步会将PooledConnection转换为ChannelOperations的子类，例如HttpClientOperations
 			ChannelOperations<?, ?> ops = opsFactory.create(c, listener, null);
 			if (ops != null) {
 				ops.bind();
@@ -88,6 +89,7 @@ final class ChannelOperationsHandler extends ChannelInboundHandlerAdapter {
 			return;
 		}
 		try {
+			// 将读取到数据通知给ChannelOperations，然后通知subscriber
 			ChannelOperations<?, ?> ops = ChannelOperations.get(ctx.channel());
 			if (ops != null) {
 				ops.onInboundNext(ctx, msg);
