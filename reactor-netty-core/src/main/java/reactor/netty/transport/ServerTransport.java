@@ -85,6 +85,7 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 		Objects.requireNonNull(config.bindAddress(), "bindAddress");
 
 		Mono<? extends DisposableServer> mono =  Mono.create(sink -> {
+			// 本地监听地址
 			SocketAddress local = Objects.requireNonNull(config.bindAddress().get(), "Bind Address supplier returned null");
 			if (local instanceof InetSocketAddress) {
 				InetSocketAddress localInet = (InetSocketAddress) local;
@@ -96,6 +97,7 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 
 			boolean isDomainSocket = false;
 			DisposableBind disposableServer;
+			// 根据是否绑定域名，决定实现类(内部会作为Subscriber消费创建好的连接，并传递给sink)
 			if (local instanceof DomainSocketAddress) {
 				isDomainSocket = true;
 				disposableServer = new UdsDisposableBind(sink, config, local);
@@ -104,14 +106,18 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 				disposableServer = new InetDisposableBind(sink, config, local);
 			}
 
+			// 默认注册的ConnectionObserver只负责通知用户设置的doOnConnection回调
 			ConnectionObserver childObs =
 					new ChildObserver(config.defaultChildObserver().then(config.childObserver()));
+			// Acceptor主要用于初始化创建的子链接
+			// channelInitializer会在连接创建完成后进行初始化，添加handler
 			Acceptor acceptor = new Acceptor(config.childEventLoopGroup(), config.channelInitializer(childObs, null, true),
 					config.childOptions, config.childAttrs, isDomainSocket);
 			TransportConnector.bind(config, new AcceptorInitializer(acceptor), local, isDomainSocket)
 			                  .subscribe(disposableServer);
 		});
 
+		// 注册用户定义的doOnBind回调
 		if (config.doOnBind() != null) {
 			mono = mono.doOnSubscribe(s -> config.doOnBind().accept(config));
 		}
@@ -127,6 +133,7 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 	 * @return a {@link Mono} of {@link Connection}
 	 */
 	public final DisposableServer bindNow() {
+		// 创建底层连接
 		return bindNow(Duration.ofSeconds(45));
 	}
 
@@ -174,6 +181,7 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 			onStart.accept(facade);
 		}
 
+		// 添加一个shutdown Hook，java停止的时候，关闭底层连接
 		Runtime.getRuntime()
 		       .addShutdownHook(new Thread(() -> facade.disposeNow(timeout)));
 
@@ -372,11 +380,14 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 		public void channelRead(ChannelHandlerContext ctx, Object msg) {
 			final Channel child = (Channel) msg;
 
+			// 给创建的子连接添加handler
 			child.pipeline().addLast(childHandler);
 
+			// 配置连接参数
 			TransportConnector.setChannelOptions(child, childOptions, isDomainSocket);
 			TransportConnector.setAttributes(child, childAttrs);
 
+			// 注册到EventLoop
 			try {
 				childGroup.register(child).addListener((ChannelFutureListener) future -> {
 					if (!future.isSuccess()) {
@@ -577,8 +588,10 @@ public abstract class ServerTransport<T extends ServerTransport<T, CONF>,
 			if (log.isDebugEnabled()) {
 				log.debug(format(channel, "Bound new server"));
 			}
+			// 通知sink(将当前对象传递给下游，自己内部封装了关闭的方法)
 			sink.success(this);
-			config.defaultConnectionObserver()
+			// 注册connectionObserver
+			config.defaultConnectionObserver() // 调用用户注册的回调
 			      .then(config.connectionObserver())
 			      .onStateChange(this, ConnectionObserver.State.CONNECTED);
 		}

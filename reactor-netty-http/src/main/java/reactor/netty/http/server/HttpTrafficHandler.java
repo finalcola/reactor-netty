@@ -90,6 +90,7 @@ final class HttpTrafficHandler extends ChannelDuplexHandler
 	int pendingResponses;
 	boolean persistentConnection = true;
 
+	// 缓存请求
 	Queue<Object> pipelined;
 
 	SocketAddress remoteAddress;
@@ -127,6 +128,7 @@ final class HttpTrafficHandler extends ChannelDuplexHandler
 
 	@Override
 	public void channelActive(ChannelHandlerContext ctx) {
+		// 添加一个闲置超时的handler
 		IdleTimeoutHandler.addIdleTimeoutHandler(ctx.pipeline(), idleTimeout);
 
 		ctx.fireChannelActive();
@@ -144,6 +146,7 @@ final class HttpTrafficHandler extends ChannelDuplexHandler
 		}
 		// read message and track if it was keepAlive
 		if (msg instanceof HttpRequest) {
+			// 清理超时的handler
 			IdleTimeoutHandler.removeIdleTimeoutHandler(ctx.pipeline());
 
 			final HttpRequest request = (HttpRequest) msg;
@@ -171,12 +174,14 @@ final class HttpTrafficHandler extends ChannelDuplexHandler
 				return;
 			}
 			if (pendingResponses > 1) {
+				// 等待的响应数大于1，请求添加到队列
 				if (HttpServerOperations.log.isDebugEnabled()) {
 					HttpServerOperations.log.debug(format(ctx.channel(), "Buffering pipelined HTTP request, " +
 									"pending response count: {}, queue: {}"),
 							pendingResponses,
 							pipelined != null ? pipelined.size() : 0);
 				}
+				// 请求添加到队列中，本次不做处理
 				overflow = true;
 				doPipeline(ctx, msg);
 				return;
@@ -186,10 +191,12 @@ final class HttpTrafficHandler extends ChannelDuplexHandler
 
 				DecoderResult decoderResult = request.decoderResult();
 				if (decoderResult.isFailure()) {
+					// 写入失败响应
 					sendDecodingFailures(decoderResult.cause(), msg);
 					return;
 				}
 
+				// 创建HttpServerOperations到pipeline，
 				HttpServerOperations ops;
 				try {
 					ops = new HttpServerOperations(Connection.from(ctx.channel()),
@@ -211,7 +218,9 @@ final class HttpTrafficHandler extends ChannelDuplexHandler
 					sendDecodingFailures(e, msg);
 					return;
 				}
+				// 将HttpServerOperations对象绑定到channel的attr属性中
 				ops.bind();
+				// 通知listener，连接配置完成
 				listener.onStateChange(ops, ConnectionObserver.State.CONFIGURED);
 
 				ctx.fireChannelRead(msg);

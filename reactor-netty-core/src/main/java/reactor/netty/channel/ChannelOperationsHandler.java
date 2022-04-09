@@ -58,6 +58,7 @@ final class ChannelOperationsHandler extends ChannelInboundHandlerAdapter {
 			listener.onStateChange(c, ConnectionObserver.State.CONNECTED);
 			// 这一步会将PooledConnection转换为ChannelOperations的子类，例如HttpClientOperations
 			ChannelOperations<?, ?> ops = opsFactory.create(c, listener, null);
+			// HttpServer是在HttpTrafficHandler里创建的ChannelOperations
 			if (ops != null) {
 				ops.bind();
 				listener.onStateChange(ops, ConnectionObserver.State.CONFIGURED);

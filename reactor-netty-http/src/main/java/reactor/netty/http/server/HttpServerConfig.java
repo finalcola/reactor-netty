@@ -563,6 +563,7 @@ public final class HttpServerConfig extends ServerTransportConfig<HttpServerConf
 		            new HttpServerCodec(decoder.maxInitialLineLength(), decoder.maxHeaderSize(),
 		                    decoder.maxChunkSize(), decoder.validateHeaders(), decoder.initialBufferSize(),
 		                    decoder.allowDuplicateContentLengths()))
+				// HttpTrafficHandler中会初始化HttpServerOperations
 		 .addBefore(NettyPipeline.ReactiveBridge,
 		            NettyPipeline.HttpTrafficHandler,
 		            new HttpTrafficHandler(compressPredicate, cookieDecoder, cookieEncoder, formDecoderProvider,

@@ -20,6 +20,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.ByteBufFlux;
 import reactor.netty.http.Http11SslContextSpec;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
 
 /**
  * An HTTP client that sends POST request to the HTTP server and
@@ -35,6 +36,9 @@ public final class EchoClient {
 	static final boolean COMPRESS = System.getProperty("compress") != null;
 
 	public static void main(String[] args) {
+		ConnectionProvider.builder("")
+				.lifo()
+				.lifo();
 		HttpClient client =
 				HttpClient.create()
 				          .port(PORT)

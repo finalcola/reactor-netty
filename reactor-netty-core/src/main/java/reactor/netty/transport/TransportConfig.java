@@ -387,10 +387,10 @@ public abstract class TransportConfig {
 				pipeline.addFirst(NettyPipeline.LoggingHandler, config.loggingHandler);
 			}
 
-			// 添加handler
+			// 添加桥接reactor的handler
 			ChannelOperations.addReactiveBridge(channel, config.channelOperationsProvider(), connectionObserver);
 
-			// channel初始化的回调函数
+			// channel初始化的回调函数(子类的defaultOnChannelInit实现会注册自己初始化channel的函数，例如HttpClient、HttpServer会配置http handler)
 			config.defaultOnChannelInit()
 			      .then(config.doOnChannelInit)
 			      .onChannelInit(connectionObserver, channel, remoteAddress);
